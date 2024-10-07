@@ -5,8 +5,9 @@
 ```sh
 HOSTNAME=postgres.pon-postgres.svc.cluster.local
 KEYNAME=postgres-teleport
+NAMESPACE=pon-postgres
 tctl auth sign --format=db --host=$HOSTNAME --out=./certs/$KEYNAME --ttl=2190h
-kubectl create secret generic postgres-certs  -n pon-postgres --from-file=./certs/$KEYNAME.crt --from-file=./certs/$KEYNAME.key --from-file=./certs/$KEYNAME.cas
+kubectl create secret generic postgres-certs  -n $NAMESPACE --from-file=./certs/$KEYNAME.crt --from-file=./certs/$KEYNAME.key --from-file=./certs/$KEYNAME.cas
 ```
 
 ### Create Postgres Credentials
@@ -19,7 +20,8 @@ kubectl create secret generic postgres-secret \
 
 ### Deploy Postgres
 ```sh
-kubectl apply -f deploy-postgres.yaml -n pon-postgres
+NAMESPACE=pon-postgres
+kubectl apply -f deploy-postgres.yaml -n $NAMESPACE
 ```
 
 ### Get Teleport Agent Helm Chart
