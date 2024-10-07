@@ -1,0 +1,132 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgres-config
+data:
+  pg_hba.conf: |
+    # TYPE  DATABASE        USER            ADDRESS                 METHOD
+
+    # "local" is for Unix domain socket connections only
+    local   all             all                                     trust
+    # IPv4 local connections:
+    # host    all             all             127.0.0.1/32            trust
+    # IPv6 local connections:
+    # host    all             all             ::1/128                 trust
+    # Allow replication connections from localhost, by a user with the
+    # replication privilege.
+    local   replication     all                                     trust
+    host    replication     all             127.0.0.1/32            trust
+    host    replication     all             ::1/128                 trust
+
+    # Disable competing entries to force SSL using Teleport cert
+    hostssl all             all             ::/0                    cert
+    hostssl all             all             0.0.0.0/0               cert
+  postgresql.conf: |
+    listen_addresses = '*'
+    #port = 5432				# (change requires restart)
+    max_connections = 100			# (change requires restart)
+
+    ssl = on
+    ssl_ca_file = '/var/lib/postgresql/postgres-teleport.cas'
+    ssl_cert_file = '/var/lib/postgresql/postgres-teleport.crt'
+    #ssl_crl_file = ''
+    ssl_key_file = '/var/lib/postgresql/postgres-teleport.key'
+    #ssl_ciphers = 'HIGH:MEDIUM:+3DES:!aNULL' # allowed SSL ciphers
+
+    shared_buffers = 128MB			# min 128kB
+    dynamic_shared_memory_type = posix	# the default is the first option
+    max_wal_size = 1GB
+    min_wal_size = 80MB
+
+    log_timezone = 'UTC'
+
+    datestyle = 'iso, mdy'
+    timezone = 'UTC'
+    lc_messages = 'en_US.utf8'			# locale for system error message
+    lc_monetary = 'en_US.utf8'			# locale for monetary formatting
+    lc_numeric = 'en_US.utf8'			# locale for number formatting
+    lc_time = 'en_US.utf8'				# locale for time formatting
+
+    default_text_search_config = 'pg_catalog.english'
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgres
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres
+  template:
+    metadata:
+      labels:
+        app: postgres
+    spec:
+      initContainers:
+        - name: copy-certs
+          image: postgres:15.8
+          # certificates need to be owened by the postgres user with permissions 0600
+          command: ['sh', '-c', 'cp /certs/* /certs-writable/ && chown -R postgres:postgres /certs-writable && chmod 0600 /certs-writable/* && ls -ahl /certs-writable']
+          volumeMounts:
+            - name: certs
+              mountPath: /certs
+            - name: certs-writable
+              mountPath: /certs-writable
+      containers:
+        - name: postgres
+          command: ["docker-entrypoint.sh"]
+          args: ["-c", "hba_file=/etc/postgresql/pg_hba.conf", "-c", "config_file=/etc/postgresql/postgresql.conf"]
+          resources:
+            limits:
+              cpu: 500m
+              memory: 128Mi
+          image: postgres:15.8
+          ports:
+            - containerPort: 5432
+          envFrom:
+            - secretRef:
+                name: postgres-secret
+          volumeMounts:
+            - name: certs-writable
+              mountPath: /var/lib/postgresql/postgres-teleport.crt
+              subPath: postgres-teleport.crt
+              readOnly: true
+            - name: certs-writable
+              mountPath: /var/lib/postgresql/postgres-teleport.key
+              subPath: postgres-teleport.key
+              readOnly: true
+            - name: certs-writable
+              mountPath: /var/lib/postgresql/postgres-teleport.cas
+              subPath: postgres-teleport.cas
+              readOnly: true
+            - name: config
+              mountPath: /etc/postgresql/pg_hba.conf
+              subPath: pg_hba.conf
+              readOnly: true
+            - name: config
+              mountPath: /etc/postgresql/postgresql.conf
+              subPath: postgresql.conf
+              readOnly: true
+      volumes:
+        - name: certs
+          secret:
+            secretName: postgres-certs
+        - name: certs-writable
+          emptyDir: {}
+        - name: config
+          configMap:
+            name: postgres-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+spec:
+  selector:
+    app: postgres
+  ports:
+    - protocol: TCP
+      port: 5432
+      targetPort: 5432
