@@ -24,12 +24,6 @@ NAMESPACE=pon-postgres
 kubectl apply -f deploy-postgres.yaml -n $NAMESPACE
 ```
 
-### Get Teleport Agent Helm Chart
-```sh
-helm repo add teleport https://charts.releases.teleport.dev
-helm repo update
-```
-
 ### Create values, token is valid for 1 hour
 ```sh
 PROXY="peter.teleport.sh:443"
@@ -51,6 +45,12 @@ databases:
       env: dev
       deploy: k8s
 EOF
+```
+
+### Get Teleport Agent Helm Chart
+```sh
+helm repo add teleport https://charts.releases.teleport.dev
+helm repo update
 ```
 
 ### Install Teleport Agent
